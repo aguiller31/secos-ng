@@ -1,5 +1,6 @@
 # secos-ng (x86)
-Une documentation du fichier tp_exam/tp.c vous ait proposée [ici](https://aguiller31.github.io/secos-ng/).
+* Une documentation du fichier tp_exam/tp.c vous ait proposée [ici](https://aguiller31.github.io/secos-ng/).
+* Une documentation succinte de nos choix de cartographie mémoire vous ait proposée [ici](https://github.com/aguiller31/secos-ng/blob/main/cartographie_memoire.md).
 
 
 secos-ng est la nouvelle version de [SECOS](https://github.com/sduverger/secos), un projet éducatif permettant d'**appliquer pas à pas les concepts d'OS et de sécurité** abordés en cours à l'aide de petits TPs, pour la plateforme x86-32bits.
