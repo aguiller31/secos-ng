@@ -5,6 +5,8 @@
 
 Le système utilise une pagination 32 bits avec deux espaces d'adressage distincts pour deux processus utilisateur, avec certaines zones partagées et des zones réservées au noyau.
 
+## Schéma de la mémoire
+![Mémoire](https://aguiller31.github.io/secos-ng/memory.png)
 ## Zones Mémoire Principales
 
 ### Tables de Pages
