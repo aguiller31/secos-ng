@@ -1,4 +1,6 @@
 # secos-ng (x86)
+Une documentation du fichier tp_exam/tp.c vous ait proposée [ici](https://aguiller31.github.io/secos-ng/).
+
 
 secos-ng est la nouvelle version de [SECOS](https://github.com/sduverger/secos), un projet éducatif permettant d'**appliquer pas à pas les concepts d'OS et de sécurité** abordés en cours à l'aide de petits TPs, pour la plateforme x86-32bits.
 Le noyau est simpliste. Il est démarré par Grub, en mode protégé en 32 bits, partiellement initialisé par Grub avant son démarrage. **L'objectif est, au fil des TPs, de le configurer petit à petit et de manière sécurisée.**
@@ -82,3 +84,5 @@ fichier `tp.c` est celui dans lequel **les développements sont attendus**.
 # En savoir plus
 
 Cf. [wiki](https://github.com/agantet/secos-ng/wiki)
+
+Nathan Laschon, Hugo Bouyer, Antoine Guillermin - TLS-SEC 2024-2025

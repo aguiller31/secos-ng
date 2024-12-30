@@ -1,3 +1,13 @@
+/**
+ * @file tp.c
+ * @brief Implémentation d'un système de gestion de processus avec pagination et changement de contexte
+ * 
+ * Ce fichier implémente un système simple de gestion de processus avec:
+ * - Gestion de la mémoire paginée
+ * - Changement de contexte entre processus
+ * - Gestion des interruptions
+ * - Communication inter-processus via mémoire partagée
+ */
 #include <debug.h>
 #include <segmem.h>
 #include <string.h>
@@ -7,8 +17,13 @@
 #include <pic.h>
 #include <io.h>
 
-
-/*  Structure d'un processus*/
+/**
+ * @struct process
+ * @brief Structure représentant un processus
+ * 
+ * @param pid Identifiant unique du processus
+ * @param regs Structure imbriquée contenant l'état des registres du processus
+ */
 struct process {
 	unsigned int pid;
 
@@ -21,36 +36,136 @@ struct process {
 	} regs __attribute__ ((packed));
 } __attribute__ ((packed));
 
-
-/*Liste des processus, nombre de processus et processus en cours*/
+/**
+ * @var p_list
+ * @brief Liste des processus du système
+ * Tableau statique contenant les processus du système
+ */
 struct process p_list[2];
+
+/**
+ * @var current
+ * @brief Pointeur vers le processus actuellement en cours d'exécution
+ */
 struct process *current = 0;
+
+/**
+ * @var n_proc
+ * @brief Nombre total de processus dans le système
+ */
 unsigned int n_proc = 0;
 
-/*Creation d'une GDT et d'un TSS*/
+/**
+ * @var GDT
+ * @brief Global Descriptor Table du système
+ * Table contenant les descripteurs de segments
+ */
 seg_desc_t GDT[7];
+
+/**
+ * @var TSS
+ * @brief Task State Segment
+ * Structure contenant l'état de la tâche courante
+ */
 tss_t TSS;
 
 /*Une PGD pour chaque processus*/
+
+/**
+@var pgd1
+@brief Page Directory du premier processus
+Pointeur vers la table des pages du processus 1
+*/
 pde32_t *pgd1;
+
+/**
+@var pgd2
+@brief Page Directory du deuxième processus
+Pointeur vers la table des pages du processus 2
+*/
 pde32_t *pgd2;
 
 
 // ---------------------------------------------------- GDT et TSS ----------------------------------------------------
+/**
+@def c0_idx
+@brief Index du descripteur de segment de code ring 0 dans la GDT
+*/
 #define c0_idx  1
-#define d0_idx  2
-#define c3_idx  3
-#define d3_idx  4
-#define ts_idx  5
-#define ts_idxB  6
 
+/**
+@def d0_idx
+@brief Index du descripteur de segment de données ring 0 dans la GDT
+*/
+#define d0_idx  2
+
+/**
+@def c3_idx
+@brief Index du descripteur de segment de code ring 3 dans la GDT
+*/
+#define c3_idx  3
+
+/**
+@def d3_idx
+@brief Index du descripteur de segment de données ring 3 dans la GDT
+*/
+#define d3_idx  4
+
+/**
+@def ts_idx
+@brief Index du descripteur TSS dans la GDT
+*/
+#define ts_idx  5
+
+/**
+@def ts_idxB
+@brief Index du descripteur TSS backup dans la GDT
+*/
+#define ts_idxB 6
+
+/**
+@def c0_sel
+@brief Sélecteur de segment de code ring 0
+*/
 #define c0_sel  gdt_krn_seg_sel(c0_idx)
+
+/**
+@def d0_sel
+@brief Sélecteur de segment de données ring 0
+*/
 #define d0_sel  gdt_krn_seg_sel(d0_idx)
+
+/**
+@def c3_sel
+@brief Sélecteur de segment de code ring 3
+*/
 #define c3_sel  gdt_usr_seg_sel(c3_idx)
+
+/**
+@def d3_sel
+@brief Sélecteur de segment de données ring 3
+*/
 #define d3_sel  gdt_usr_seg_sel(d3_idx)
+
+/**
+@def ts_sel
+@brief Sélecteur de segment TSS
+*/
 #define ts_sel  gdt_krn_seg_sel(ts_idx)
 
+/**
+@def gdt_flat_dsc(dSc,pVl,tYp)
+@brief Macro de création d'un descripteur de segment "flat"
+@param dSc Pointeur vers le descripteur à initialiser
+@param pVl Niveau de privilège (0 pour kernel, 3 pour user)
+@param tYp Type de segment (code ou données)
 
+Initialise un descripteur de segment avec:
+* Limite maximale (4GB)
+* Base à 0
+* Granularité en pages
+* Segment 32 bits
+*/
 #define gdt_flat_dsc(_dSc_,_pVl_,_tYp_) ({      \
     (_dSc_)->raw = 0;                           \
     (_dSc_)->limit_1 = 0xFFFF;                  \
@@ -63,6 +178,17 @@ pde32_t *pgd2;
     (_dSc_)->p = 1;                             \
 })
 
+/**
+@def tss_dsc(dSc,tSs)
+@brief Macro de création d'un descripteur TSS
+@param dSc Pointeur vers le descripteur à initialiser
+@param tSs Adresse de la structure TSS
+
+Initialise un descripteur TSS avec:
+* Base pointant vers la structure TSS
+* Limite égale à la taille de la structure TSS
+* Type TSS 32 bits disponible
+*/
 #define tss_dsc(_dSc_,_tSs_) ({                 \
     raw32_t addr = {.raw = _tSs_};              \
     (_dSc_)->raw = sizeof(tss_t);               \
@@ -73,11 +199,43 @@ pde32_t *pgd2;
     (_dSc_)->p = 1;                             \
 })
 
+/**
+@def c0_dsc(_d)
+@brief Macro de création d'un descripteur de segment de code ring 0
+@param _d Pointeur vers le descripteur
+*/
 #define c0_dsc(_d) gdt_flat_dsc(_d, 0, SEG_DESC_CODE_XR)
+
+/**
+@def d0_dsc(_d)
+@brief Macro de création d'un descripteur de segment de données ring 0
+@param _d Pointeur vers le descripteur
+*/
 #define d0_dsc(_d) gdt_flat_dsc(_d, 0, SEG_DESC_DATA_RW)
+
+/**
+@def c3_dsc(_d)
+@brief Macro de création d'un descripteur de segment de code ring 3
+@param _d Pointeur vers le descripteur
+*/
 #define c3_dsc(_d) gdt_flat_dsc(_d, 3, SEG_DESC_CODE_XR)
+
+/**
+@def d3_dsc(_d)
+@brief Macro de création d'un descripteur de segment de données ring 3
+@param _d Pointeur vers le descripteur
+*/
 #define d3_dsc(_d) gdt_flat_dsc(_d, 3, SEG_DESC_DATA_RW)
 
+/**
+ * @fn void init_gdt()
+ * @brief Initialise la GDT et les registres de segments
+ * 
+ * Configure la GDT avec:
+ * - Segments code et données pour ring 0
+ * - Segments code et données pour ring 3
+ * - Descripteur TSS
+ */
 void init_gdt() {
     gdt_reg_t gdtr;
 
@@ -100,7 +258,12 @@ void init_gdt() {
 }
 
 // ---------------------------------------------------- Interruption et Appel Système ----------------------------------------------------
-
+/**
+ * @fn void syscall_isr()
+ * @brief Gestionnaire d'interruption pour les appels système
+ * 
+ * Routine assembleur qui sauvegarde le contexte et appelle syscall_handler
+ */
 void syscall_isr() {
    asm volatile (
       "leave ; pusha        \n"
@@ -111,6 +274,14 @@ void syscall_isr() {
       );
 }
 
+/**
+ * @fn void syscall_handler(int sys_num)
+ * @brief Gestionnaire des appels système
+ * @param sys_num Numéro de l'appel système
+ * 
+ * Implémente les différents appels système:
+ * - 1: Affichage de la valeur d'un compteur
+ */
 void __regparm__(1) syscall_handler(int sys_num) {
 
 	uint32_t *counter;
@@ -123,6 +294,15 @@ void __regparm__(1) syscall_handler(int sys_num) {
 	  }
 }
 
+/**
+ * @fn void schedule(void)
+ * @brief Ordonnanceur de processus
+ * 
+ * Réalise le changement de contexte entre processus:
+ * - Sauvegarde le contexte du processus courant
+ * - Sélectionne le prochain processus à exécuter
+ * - Restaure le contexte du nouveau processus
+ */
 void schedule(void){
    	
 	uint32_t * stack_ptr;
@@ -210,6 +390,12 @@ void schedule(void){
 
 }
 
+/**
+ * @fn void irq0_handler()
+ * @brief Gestionnaire d'interruption timer
+ * 
+ * Appelé à chaque interruption timer, déclenche l'ordonnanceur
+ */
 void irq0_handler() {
 	asm volatile (
 		"pusha       \n"
@@ -220,6 +406,11 @@ void irq0_handler() {
 	);
 }
 
+/**
+ * @fn void sys_counter(uint32_t * counter)
+ * @brief Appel système pour afficher un compteur
+ * @param counter Pointeur vers le compteur à afficher
+ */
 void sys_counter(uint32_t * counter){
       asm volatile("mov  %0, %%ebx;mov $0x01, %%eax":"=m"(counter) :);
       asm volatile ("int $0x80");
@@ -227,8 +418,12 @@ void sys_counter(uint32_t * counter){
 
 //-----------------------------------------------------Fonction compteurs (Ecriture et Lecture) ----------------------------
 
-
-//Incrémentation du compteur 
+/**
+ * @fn void user1()
+ * @brief Incrémentation du compteur - Processus utilisateur 1
+ * 
+ * Processus qui incrémente un compteur en mémoire partagée
+ */
 __attribute__((section(".user1.text"))) void user1() {
 	
 	uint32_t *counter = (uint32_t *)0x706000; // Adresse virtuelle dans la zone partagée
@@ -239,7 +434,12 @@ __attribute__((section(".user1.text"))) void user1() {
     }
 }
 
-//Affichage du compteur
+/**
+ * @fn void user2()
+ * @brief Affichage du compteur - Processus utilisateur 2
+ * 
+ * Processus qui lit et affiche la valeur du compteur via un appel système
+ */
 __attribute__((section(".user2.text")))  void user2() {
 
     uint32_t *counter = (uint32_t *)0x806000; // Adresse virtuelle dans la zone partagée
@@ -252,6 +452,15 @@ __attribute__((section(".user2.text")))  void user2() {
 
 //----------------------------------------------------Initialisation des tables de pages ----------------------------------------
 
+/**
+ * @fn void init_tables()
+ * @brief Initialise les tables de pages des processus
+ * 
+ * Configure la pagination pour chaque processus:
+ * - Tables de pages pour l'espace utilisateur
+ * - Tables de pages pour l'espace noyau
+ * - Zones de mémoire partagée
+ */
 void init_tables(){
 
 //---------------------------------------------------------Process 1 -----------------------------------------------------------
@@ -315,7 +524,15 @@ void init_tables(){
 }
 
 //--------------------------------------------Initialisation de l'IDTR -------------------------------------------------------
-void init_idtr(){
+/**
+ * @fn void init_idtr()
+ * @brief Initialise l'IDT (Interrupt Descriptor Table)
+ * 
+ * Configure:
+ * - Le gestionnaire d'interruption timer (IRQ0)
+ * - Le gestionnaire d'appels système (int 0x80)
+ */
+ void init_idtr(){
 
    idt_reg_t idtr;
    get_idtr(idtr);
@@ -332,6 +549,18 @@ void init_idtr(){
 
 //-----------------------------------------Chargement d'un processus----------------------------------------
 
+/**
+ * @fn void ChargementTache(uint32_t pgd, uint32_t esp, uint32_t fonction)
+ * @brief Charge un nouveau processus
+ * @param pgd Adresse du répertoire de pages du processus
+ * @param esp Pointeur de pile initial
+ * @param fonction Point d'entrée du processus
+ * 
+ * Initialise une nouvelle entrée dans la table des processus avec:
+ * - Configuration des registres
+ * - Initialisation de la pile
+ * - Configuration des segments
+ */
 void ChargementTache(uint32_t pgd, uint32_t esp, uint32_t fonction){
    
    p_list[n_proc].pid = n_proc;
@@ -347,7 +576,20 @@ void ChargementTache(uint32_t pgd, uint32_t esp, uint32_t fonction){
 }
 
 //---------------------------------------Point d'entrée du programme-------------------------------------
-void tp() {
+/**
+ * @fn void tp()
+ * @brief Point d'entrée principal du système
+ * 
+ * Séquence d'initialisation:
+ * 1. Initialisation de la GDT
+ * 2. Configuration des tables de pages
+ * 3. Configuration de l'IDT
+ * 4. Chargement des processus utilisateur
+ * 5. Activation de la pagination
+ * 6. Activation des interruptions
+ * 7. Passage en mode utilisateur
+ */
+ void tp() {
 
    debug("Initialisation de la GDT\n");
    init_gdt();
