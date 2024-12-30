@@ -27,4 +27,33 @@ SECTIONS
    /DISCARD/ : { *(.note* .indent .comment)      } : phsetup
 
    __kernel_end__ = .;
+
+   . = 0x704000;
+   .text : {
+        *(.text)
+    }
+    .rodata : {
+        *(.rodata)
+    }
+    .user1 : {
+        user_start = .; /* Marqueur de début du code utilisateur */
+        *(.user1.text)
+        user_end = .;   /* Marqueur de fin */
+    }
+
+    . = 0x804000;
+   .text : {
+        *(.text)
+    }
+    .rodata : {
+        *(.rodata)
+    }
+    .user2 : {
+        user_start = .; /* Marqueur de début du code utilisateur */
+        *(.user2.text)
+        user_end = .;   /* Marqueur de fin */
+    }
+
+
+
 }

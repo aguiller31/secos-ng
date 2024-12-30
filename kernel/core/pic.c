@@ -48,7 +48,8 @@ void pic_init()
    **  - non buffered
    **  - not special fully nested
    */
-   icw4.raw = 1;
+  //J'ai modifié ici !!!!!!
+   icw4.raw = 0b00000010;
    out(icw4.raw, PIC_ICW4(PIC1));
    out(icw4.raw, PIC_ICW4(PIC2));
 }
